@@ -6,31 +6,30 @@ from typing import List, Dict, Any
 mcp = FastMCP("FoodAI-Location")
 
 TWOGIS_API_KEY = os.getenv("TWO_GIS_API_KEY")
-# Переходим на endpoint /3.0/markers, который отлично работает с сортировкой по расстоянию
-TWOGIS_MARKERS_URL = "https://catalog.api.2gis.com/3.0/markers"
+# ✅ Возвращаемся на /3.0/items — этот сервис точно включён в твоём ключе
+TWOGIS_PLACES_URL = "https://catalog.api.2gis.com/3.0/items"
 
 @mcp.tool()
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
     """
-    Находит рестораны и кафе в радиусе 1000 метров, сортируя их по реальному расстоянию.
+    Находит рестораны и кафе в радиусе 1000 метров, сортируя их по расстоянию.
     """
     point = f"{longitude},{latitude}"
     
-    # 🚀 ГЛАВНЫЕ ИЗМЕНЕНИЯ ЗДЕСЬ:
     params = {
-        "q": "ресторан кафе",          # Текстовый поиск
-        "point": point,                # Точка для поиска в радиусе
-        "radius": 1000,                # Радиус 1 км
-        "location": point,             # Точка отсчета для сортировки
-        "sort": "distance",            # Сортируем по возрастанию расстояния
+        "q": "ресторан кафе",
+        "point": point,          # точка, вокруг которой ищем
+        "radius": 1000,
+        "location": point,       # точка, от которой считается расстояние для сортировки
+        "sort": "distance",      # 👈 сортировка по возрастанию расстояния
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
-        "page_size": 10                # Максимум 10 для демо-ключа
+        "page_size": 10
     }
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(TWOGIS_MARKERS_URL, params=params, timeout=10.0)
+            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=10.0)
             data = response.json()
 
             if data.get("meta", {}).get("code") != 200:
@@ -66,7 +65,7 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
 
     return restaurants
 
-# Функция get_route остается без изменений
+# Функция get_route остаётся без изменений...
 @mcp.tool()
 async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon: float, mode: str = "driving") -> Dict[str, Any]:
     url = f"http://router.project-osrm.org/route/v1/{mode}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=false"
