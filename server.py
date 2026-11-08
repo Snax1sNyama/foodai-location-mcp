@@ -1,32 +1,47 @@
 import httpx
 import math
+import asyncio
 from fastmcp import FastMCP
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 mcp = FastMCP("FoodAI-Location")
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-# Обязательно указываем User-Agent, иначе Overpass может заблокировать
+# 1. Создаем пул из нескольких проверенных зеркал Overpass API
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",          # Основной (часто падает, но пробуем первым)
+    "https://overpass.kumi.systems/api/interpreter",    # Немецкое зеркало (очень стабильное)
+    "https://overpass.openstreetmap.ru/api/interpreter",# Российское зеркало
+]
+
 HEADERS = {"User-Agent": "FoodAI-MCP-Server/1.0 (student_project)"}
 
-# Функция для расчета расстояния между двумя точками на Земле (в метрах)
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = 6371000  # Радиус Земли в метрах
+    R = 6371000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
+async def _fetch_from_overpass(endpoint: str, query: str, client: httpx.AsyncClient) -> Optional[dict]:
+    """Вспомогательная функция для запроса к одному эндпоинту."""
+    try:
+        response = await client.post(endpoint, data={'data': query}, headers=HEADERS, timeout=30.0)
+        # Если сервер перегружен (429) или упал (5xx), возвращаем None, чтобы попробовать следующее зеркало
+        if response.status_code in [429, 500, 502, 503, 504]:
+            print(f"Эндпоинт {endpoint} вернул ошибку {response.status_code}. Пробуем следующее зеркало...")
+            return None
+        response.raise_for_status()
+        return response.json()
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
+        print(f"Сетевая ошибка при запросе к {endpoint}: {e}")
+        return None
+
 @mcp.tool()
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
     """
-    Находит рестораны и фастфуд в радиусе 500 метров (около 5-7 минут ходьбы),
-    используя Overpass API (OpenStreetMap). Сортирует по удаленности.
+    Находит рестораны и фастфуд, используя пул зеркал Overpass API.
     """
-    
-    # Ищем рестораны (amenity=restaurant) и фастфуд (amenity=fast_food)
-    # Выводим не более 15 результатов, чтобы не перегружать ответ
     overpass_query = f"""
     [out:json][timeout:25];
     (
@@ -36,68 +51,43 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
     out center 15;
     """
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(OVERPASS_URL, data={'data': overpass_query}, headers=HEADERS, timeout=30.0)
-            
-            # Обработка перегрузки сервера Overpass
-            if response.status_code == 429:
-                return [{"status": "error", "message": "Сервер OpenStreetMap перегружен. Попробуйте позже."}]
-                
-            response.raise_for_status()
-            data = response.json()
-            
-    except httpx.RequestError as e:
-        return [{"status": "error", "message": f"Ошибка сети: {e}"}]
-    except Exception as e:
-        return [{"status": "error", "message": f"Системная ошибка: {e}"}]
+    data = None
+    # 2. Проходим по списку эндпоинтов, пока не получим успешный ответ
+    async with httpx.AsyncClient() as client:
+        for endpoint in OVERPASS_ENDPOINTS:
+            data = await _fetch_from_overpass(endpoint, overpass_query, client)
+            if data is not None:
+                # Успех! Выходим из цикла.
+                break
+        
+        if data is None:
+            return [{"status": "error", "message": "Все серверы Overpass API временно недоступны. Пожалуйста, попробуйте позже."}]
 
+    # ... (дальнейшая обработка data и формирование списка ресторанов остается без изменений)
     restaurants = []
-    
     for element in data.get("elements", []):
+        # (код обработки элемента такой же, как и раньше)
         tags = element.get("tags", {})
         name = tags.get("name") or tags.get("brand")
-        
-        # Пропускаем места без названия
-        if not name:
-            continue
-            
-        # Извлекаем координаты
+        if not name: continue
         lat = element.get("lat") or element.get("center", {}).get("lat")
         lon = element.get("lon") or element.get("center", {}).get("lon")
-        
-        if not lat or not lon:
-            continue
+        if not lat or not lon: continue
 
-        # Считаем реальное расстояние в метрах
         distance_meters = haversine_distance(latitude, longitude, lat, lon)
-        # Примерное время ходьбы (средняя скорость 80 м/мин)
         distance_minutes = round(distance_meters / 80)
-
-        # Тип кухни (если указан в OSM)
         cuisine = tags.get("cuisine", "fast_food")
-        
-        # --- ОГРАНИЧЕНИЕ БЮДЖЕТА ---
-        # В OSM нет цен. Мы предполагаем, что если бюджет пользователя < 150 руб., 
-        # то это может быть проблемой для полноценного обеда. 
-        # Оставляем заглушку min_price = 150, чтобы фильтр работал.
         min_price = 150 
         
         if min_price <= budget:
             restaurants.append({
-                "name": name,
-                "distance_meters": round(distance_meters),
-                "distance_min": distance_minutes,
-                "cuisine": cuisine,
-                "min_price_estimate": min_price,
-                "lat": lat,
-                "lon": lon
+                "name": name, "distance_meters": round(distance_meters),
+                "distance_min": distance_minutes, "cuisine": cuisine,
+                "min_price_estimate": min_price, "lat": lat, "lon": lon
             })
 
     if not restaurants:
         return [{"status": "error", "message": "В радиусе 500 метров не найдено подходящих ресторанов."}]
 
-    # Сортируем по расстоянию (от ближайших к дальним) и отдаем топ-5
     restaurants.sort(key=lambda x: x["distance_meters"])
-    
     return restaurants[:5]
