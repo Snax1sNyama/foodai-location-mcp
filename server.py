@@ -11,30 +11,38 @@ TWOGIS_PLACES_URL = "https://catalog.api.2gis.com/3.0/items"
 @mcp.tool()
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
     """
-    Находит рестораны и кафе в радиусе 1000 метров, используя 2GIS Places API.
+    Находит рестораны и кафе в радиусе 1000 метров.
     """
     point = f"{longitude},{latitude}"
     
+    # Упростили запрос: ищем просто "ресторан" и "кафе"
     params = {
-        # Ищем по ID рубрик: 161 (Рестораны), 164 (Кафе), 165 (Бары)
-        "rubric_id": "161,164,165", 
+        "q": "ресторан кафе", 
         "point": point,
-        "radius": 1000,               # Увеличили радиус до 1 км
+        "radius": 1000, 
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
-        "page_size": 15               # Берем топ-15 результатов
+        "page_size": 15
     }
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=10.0)
-            response.raise_for_status()
             data = response.json()
+            
+            # 🚨 ОТЛАДКА: Выводим ответ в логи FastMCP Cloud
+            print(f"ОТВЕТ ОТ 2GIS: {data}") 
+            
+            # Проверяем статус ответа от 2GIS
+            if data.get("meta", {}).get("code") != 200:
+                error_msg = data.get("meta", {}).get("error", {}).get("message", "Неизвестная ошибка 2GIS")
+                return [{"status": "error", "message": f"2GIS API вернул ошибку: {error_msg}"}]
+
     except Exception as e:
-        return [{"status": "error", "message": f"Ошибка при запросе к 2GIS: {e}"}]
+        return [{"status": "error", "message": f"Ошибка сети: {e}"}]
 
     if "result" not in data or "items" not in data["result"]:
-        return [{"status": "error", "message": "В радиусе 1000 метров не найдено подходящих мест."}]
+        return [{"status": "error", "message": "2GIS вернул пустой список. Возможно, превышен лимит запросов."}]
 
     restaurants = []
     for item in data["result"]["items"]:
@@ -55,18 +63,13 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
                 "lat": lat,
                 "lon": lon,
                 "cuisine": cuisine,
-                "min_price_estimate": 150 
             })
-
-    if not restaurants:
-        return [{"status": "error", "message": "Не удалось найти рестораны по заданным координатам."}]
 
     return restaurants
 
 # Функция get_route остается без изменений...
 @mcp.tool()
 async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon: float, mode: str = "driving") -> Dict[str, Any]:
-    """Строит маршрут между двумя точками, используя бесплатный OSRM."""
     url = f"http://router.project-osrm.org/route/v1/{mode}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=false"
     try:
         async with httpx.AsyncClient() as client:
@@ -75,13 +78,9 @@ async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon:
             if data.get("code") != "Ok":
                 return {"error": "Не удалось построить маршрут"}
             route = data["routes"][0]
-            return {
-                "distance_km": round(route["distance"] / 1000, 2),
-                "duration_min": round(route["duration"] / 60, 1),
-                "mode": mode
-            }
+            return {"distance_km": round(route["distance"] / 1000, 2), "duration_min": round(route["duration"] / 60, 1), "mode": mode}
     except Exception as e:
-        return {"error": f"Ошибка сервиса маршрутов: {e}"}
+        return {"error": f"Ошибка маршрутов: {e}"}
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
