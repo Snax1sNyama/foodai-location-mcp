@@ -22,7 +22,7 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
         "radius": 1000, 
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
-        "page_size": 15
+        "page_size": 10
     }
 
     try:
