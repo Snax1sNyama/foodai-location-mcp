@@ -12,27 +12,28 @@ TWOGIS_PLACES_URL = "https://twogis-proxy.zherdevdenis25.workers.dev/3.0/items"
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
     point = f"{longitude},{latitude}"
 
-   params = {
-        "q": "ресторан фастфуд", # 👈 Вернули текстовый поиск, как в рабочем тесте
+    params = {
+        "q": "ресторан фастфуд",
         "point": point,
-        "radius": 2000,          # Радиус 2 км
+        "radius": 2000,
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
-        "page_size": 50          # Берем 50 результатов
+        "page_size": 50
     }
 
     try:
         async with httpx.AsyncClient() as client:
-            # Даем 15 секунд на ответ
-            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=15.0) 
+            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=15.0)
             data = response.json()
 
+            print(f"2GIS RESPONSE: {data}")
+
             if data.get("meta", {}).get("code") != 200:
-                print(f"Ошибка 2GIS: {data.get('meta', {}).get('error', {}).get('message')}")
+                print(f"Ошибка 2GIS API: {data.get('meta', {}).get('error')}")
                 return []
 
     except Exception as e:
-        print(f"Сетевая ошибка: {e}")
+        print(f"Сетевая ошибка при запросе к 2GIS: {e}")
         return []
 
     if "result" not in data or "items" not in data["result"]:
@@ -46,7 +47,6 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
         point_data = item.get("point", {})
         lat = point_data.get("lat")
         lon = point_data.get("lon")
-        
         rubrics = item.get("rubrics", [])
         cuisine = rubrics[0].get("name", "Заведение") if rubrics else "Заведение"
 
