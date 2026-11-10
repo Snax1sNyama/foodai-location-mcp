@@ -12,15 +12,13 @@ TWOGIS_PLACES_URL = "https://twogis-proxy.zherdevdenis25.workers.dev/3.0/items"
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
     point = f"{longitude},{latitude}"
 
-    params = {
-        # 👇 МАГИЯ ЗДЕСЬ: Ищем по всем категориям общепита одновременно
-        "rubric_id": "161,162,164,165", 
+   params = {
+        "q": "ресторан фастфуд", # 👈 Вернули текстовый поиск, как в рабочем тесте
         "point": point,
-        "radius": 2000,          # Радиус 2 км, чтобы захватить больше мест
-        "type": "branch",        # Ищем только организации (не здания)
+        "radius": 2000,          # Радиус 2 км
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
-        "page_size": 50          # Берем до 50 результатов (максимум для 2ГИС)
+        "page_size": 50          # Берем 50 результатов
     }
 
     try:
