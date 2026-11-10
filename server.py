@@ -6,42 +6,35 @@ from typing import List, Dict, Any
 mcp = FastMCP("FoodAI-Location")
 
 TWOGIS_API_KEY = os.getenv("TWO_GIS_API_KEY")
-# Если у тебя работает Cloudflare Worker, раскомментируй строку ниже и закомментируй следующую
-# TWOGIS_PLACES_URL = "https://twogis-proxy.zherdevdenis25.workers.dev/3.0/items"
 TWOGIS_PLACES_URL = "https://catalog.api.2gis.com/3.0/items"
 
 @mcp.tool()
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
-    """
-    Находит еду в радиусе 1000 метров.
-    """
     point = f"{longitude},{latitude}"
 
     params = {
-        "q": "ресторан фастфуд",  # 👈 Вернули точный запрос
+        # 👇 МАГИЯ ЗДЕСЬ: Ищем по всем категориям общепита одновременно
+        "rubric_id": "161,162,164,165", 
         "point": point,
-        "radius": 1000,           # 👈 Вернули адекватный радиус
+        "radius": 2000,          # Радиус 2 км, чтобы захватить больше мест
+        "type": "branch",        # Ищем только организации (не здания)
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
-        "page_size": 10
+        "page_size": 50          # Берем до 50 результатов (максимум для 2ГИС)
     }
 
     try:
         async with httpx.AsyncClient() as client:
-            # 👈 СТАВИМ ЖЕСТКИЙ ТАЙМАУТ 5 СЕКУНД
-            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=10.0) 
+            # Даем 15 секунд на ответ
+            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=15.0) 
             data = response.json()
 
             if data.get("meta", {}).get("code") != 200:
-                error_msg = data.get("meta", {}).get("error", {}).get("message", "Неизвестная ошибка")
-                print(f"Ошибка 2GIS API: {error_msg}")
+                print(f"Ошибка 2GIS: {data.get('meta', {}).get('error', {}).get('message')}")
                 return []
 
-    except httpx.TimeoutException:
-        print("2GIS не ответил за 5 секунд. Сдаемся.")
-        return []
     except Exception as e:
-        print(f"Сетевая ошибка при запросе к 2GIS: {e}")
+        print(f"Сетевая ошибка: {e}")
         return []
 
     if "result" not in data or "items" not in data["result"]:
@@ -52,7 +45,6 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
     for item in data["result"]["items"]:
         name = item.get("name")
         address = item.get("address_name", "Адрес не указан")
-        
         point_data = item.get("point", {})
         lat = point_data.get("lat")
         lon = point_data.get("lon")
@@ -71,7 +63,6 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
 
     return restaurants
 
-
 @mcp.tool()
 async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon: float, mode: str = "driving") -> Dict[str, Any]:
     url = f"http://router.project-osrm.org/route/v1/{mode}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=false"
@@ -82,13 +73,9 @@ async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon:
             if data.get("code") != "Ok":
                 return {"error": "Не удалось построить маршрут"}
             route = data["routes"][0]
-            return {
-                "distance_km": round(route["distance"] / 1000, 2),
-                "duration_min": round(route["duration"] / 60, 1),
-                "mode": mode
-            }
+            return {"distance_km": round(route["distance"] / 1000, 2), "duration_min": round(route["duration"] / 60, 1), "mode": mode}
     except Exception as e:
-        return {"error": f"Ошибка сервиса маршрутов: {e}"}
+        return {"error": f"Ошибка маршрутов: {e}"}
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
