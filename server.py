@@ -6,19 +6,21 @@ from typing import List, Dict, Any
 mcp = FastMCP("FoodAI-Location")
 
 TWOGIS_API_KEY = os.getenv("TWO_GIS_API_KEY")
+# Если у тебя работает Cloudflare Worker, раскомментируй строку ниже и закомментируй следующую
+# TWOGIS_PLACES_URL = "https://twogis-proxy.zherdevdenis25.workers.dev/3.0/items"
 TWOGIS_PLACES_URL = "https://catalog.api.2gis.com/3.0/items"
 
 @mcp.tool()
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
     """
-    Находит еду (рестораны, кафе, фастфуд) в радиусе 1500 метров.
+    Находит еду в радиусе 1000 метров.
     """
     point = f"{longitude},{latitude}"
 
     params = {
-        "q": "еда",                 # 👈 Поиск по слову "еда" захватывает всё
+        "q": "ресторан фастфуд",  # 👈 Вернули точный запрос
         "point": point,
-        "radius": 1500,             # 👈 Увеличили радиус, чтобы захватить фудкорты
+        "radius": 1000,           # 👈 Вернули адекватный радиус
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
         "page_size": 10
@@ -26,7 +28,8 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=30.0)
+            # 👈 СТАВИМ ЖЕСТКИЙ ТАЙМАУТ 5 СЕКУНД
+            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=5.0) 
             data = response.json()
 
             if data.get("meta", {}).get("code") != 200:
@@ -34,6 +37,9 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
                 print(f"Ошибка 2GIS API: {error_msg}")
                 return []
 
+    except httpx.TimeoutException:
+        print("2GIS не ответил за 5 секунд. Сдаемся.")
+        return []
     except Exception as e:
         print(f"Сетевая ошибка при запросе к 2GIS: {e}")
         return []
@@ -68,13 +74,10 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
 
 @mcp.tool()
 async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon: float, mode: str = "driving") -> Dict[str, Any]:
-    """
-    Строит маршрут между двумя точками через OSRM.
-    """
     url = f"http://router.project-osrm.org/route/v1/{mode}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=false"
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10.0)
+            response = await client.get(url, timeout=5.0)
             data = response.json()
             if data.get("code") != "Ok":
                 return {"error": "Не удалось построить маршрут"}
@@ -86,7 +89,6 @@ async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon:
             }
     except Exception as e:
         return {"error": f"Ошибка сервиса маршрутов: {e}"}
-
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
