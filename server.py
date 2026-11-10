@@ -13,31 +13,27 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
     point = f"{longitude},{latitude}"
 
     params = {
-        "q": "ресторан фастфуд",
+        "q": "ресторан",
         "point": point,
-        "radius": 2000,
+        "radius": 1000,
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
-        "page_size": 50
+        "page_size": 10
     }
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=15.0)
             data = response.json()
-
             print(f"2GIS RESPONSE: {data}")
 
             if data.get("meta", {}).get("code") != 200:
-                print(f"Ошибка 2GIS API: {data.get('meta', {}).get('error')}")
                 return []
-
     except Exception as e:
-        print(f"Сетевая ошибка при запросе к 2GIS: {e}")
+        print(f"Ошибка 2GIS: {e}")
         return []
 
     if "result" not in data or "items" not in data["result"]:
-        print("2GIS вернул пустой список.")
         return []
 
     restaurants = []
