@@ -13,14 +13,15 @@ TWOGIS_PLACES_URL = "https://catalog.api.2gis.com/3.0/items"
 @mcp.tool()
 async def find_restaurants(latitude: float, longitude: float, budget: int) -> List[Dict[str, Any]]:
     """
-    Находит рестораны, кафе и фастфуд в радиусе 700 метров.
+    Находит рестораны и кафе в радиусе 1000 метров.
+    Использует проверенный текстовый запрос "ресторан", который стабильно работает.
     """
     point = f"{longitude},{latitude}"
 
     params = {
-        "q": "ресторан кафе фастфуд", # Более точный запрос
+        "q": "ресторан",              # 👈 Тот самый запрос, который работал в тесте
         "point": point,
-        "radius": 700,                # Уменьшили радиус для скорости
+        "radius": 1000,               # Вернули радиус 1000 метров
         "key": TWOGIS_API_KEY,
         "fields": "items.point,items.address_name,items.rubrics",
         "page_size": 10
@@ -28,7 +29,7 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
 
     try:
         async with httpx.AsyncClient() as client:
-            # Увеличили таймаут до 30 секунд
+            # Даем 30 секунд на ответ
             response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=30.0)
             data = response.json()
 
