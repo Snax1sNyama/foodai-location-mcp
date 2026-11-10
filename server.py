@@ -77,7 +77,7 @@ async def get_route(start_lat: float, start_lon: float, end_lat: float, end_lon:
     url = f"http://router.project-osrm.org/route/v1/{mode}/{start_lon},{start_lat};{end_lon},{end_lat}?overview=false"
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=5.0)
+            response = await client.get(url, timeout=10.0)
             data = response.json()
             if data.get("code") != "Ok":
                 return {"error": "Не удалось построить маршрут"}
