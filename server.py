@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 mcp = FastMCP("FoodAI-Location")
 
 TWOGIS_API_KEY = os.getenv("TWO_GIS_API_KEY")
-TWOGIS_PLACES_URL = "https://catalog.api.2gis.com/3.0/items"
+TWOGIS_PLACES_URL = "https://twogis-proxy.zherdevdenis25.workers.dev/3.0/items"
 
 
 @mcp.tool()
