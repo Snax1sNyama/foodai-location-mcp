@@ -17,7 +17,7 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
     point = f"{longitude},{latitude}"
 
     params = {
-        "q": "ресторан",          # Упростили запрос
+        "q": "еда",          # Упростили запрос
         "point": point,
         "radius": 1000,
         "key": TWOGIS_API_KEY,
