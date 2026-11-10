@@ -29,7 +29,7 @@ async def find_restaurants(latitude: float, longitude: float, budget: int) -> Li
     try:
         async with httpx.AsyncClient() as client:
             # 👈 СТАВИМ ЖЕСТКИЙ ТАЙМАУТ 5 СЕКУНД
-            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=5.0) 
+            response = await client.get(TWOGIS_PLACES_URL, params=params, timeout=10.0) 
             data = response.json()
 
             if data.get("meta", {}).get("code") != 200:
